@@ -1,0 +1,56 @@
+ import streamlit as st
+    import cv2
+    import numpy as np
+    from PIL import Image
+except ModuleNotFoundError as e:
+    print(f"Module not found: {e}. Please install missing dependencies using 'pip install streamlit opencv-python numpy pillow'.")
+    exit()
+
+# Title and description
+st.set_page_config(page_title="Biometric Analysis", layout="wide")
+st.title("Biometric Marker Analysis")
+st.markdown("This application captures an image from your webcam and analyzes biometric markers.")
+
+# Sidebar instructions
+st.sidebar.header("Instructions")
+st.sidebar.write("1. Allow camera access.")
+st.sidebar.write("2. Click 'Capture Image' to take a photo.")
+st.sidebar.write("3. The system will analyze biometric markers.")
+
+# Webcam capture function
+def capture_image():
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("Error: Could not open webcam. Please check your camera settings.")
+        return None
+    
+    ret, frame = cap.read()
+    cap.release()
+    if ret:
+        return frame
+    else:
+        st.error("Error: Failed to capture image.")
+        return None
+
+# Capture image button
+if st.button("Capture Image"):
+    image = capture_image()
+    if image is not None:
+        # Convert image for display
+        img_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        img_pil = Image.fromarray(img_rgb)
+        
+        st.image(img_pil, caption="Captured Image", use_column_width=True)
+        
+        # Placeholder for biometric analysis
+        st.subheader("Biometric Analysis")
+        st.write("**Face Detection:** Detecting facial landmarks...")
+        st.write("**Heart Rate Estimation:** Placeholder for heart rate analysis...")
+        st.write("**Blood Pressure Estimation:** Placeholder for BP estimation...")
+        st.write("**Other Markers:** More biometric markers can be added here.")
+    else:
+        st.error("Failed to capture image. Please try again.")
+
+# Footer
+st.markdown("---")
+st.markdown("Developed with ❤️ using Streamlit")
