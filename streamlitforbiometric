@@ -1,0 +1,70 @@
+import streamlit as st
+import cv2
+import numpy as np
+import mediapipe as mp
+import joblib
+from PIL import Image
+import tempfile
+import os
+
+# Load pre-trained model (placeholder, replace with actual trained model)
+model = joblib.load("health_model.pkl")  # Ensure this file exists
+
+# Initialize Mediapipe face detection
+mp_face_detection = mp.solutions.face_detection
+face_detection = mp_face_detection.FaceDetection(min_detection_confidence=0.5)
+
+st.title("Health Data Prediction Using Smartphone Camera")
+st.write("Scan your face using the smartphone camera to estimate health metrics.")
+
+# Sidebar menu
+option = st.sidebar.selectbox("Choose an option", ["Home", "Scan Face", "Chat Bot"])
+
+# Function to extract face bounding box
+def extract_face(frame):
+    image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_detection.process(image_rgb)
+    if results.detections:
+        for detection in results.detections:
+            bboxC = detection.location_data.relative_bounding_box
+            h, w, c = frame.shape
+            bbox = int(bboxC.xmin * w), int(bboxC.ymin * h), int(bboxC.width * w), int(bboxC.height * h)
+            face = frame[bbox[1]:bbox[1] + bbox[3], bbox[0]:bbox[0] + bbox[2]]
+            return face
+    return None
+
+if option == "Scan Face":
+    # Video capture from Streamlit's camera input
+    video_file = st.file_uploader("Upload a video file", type=["mp4", "mov", "avi"])
+    if video_file is not None:
+        tfile = tempfile.NamedTemporaryFile(delete=False)
+        tfile.write(video_file.read())
+        cap = cv2.VideoCapture(tfile.name)
+        extracted_features = []
+
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret:
+                break
+            face = extract_face(frame)
+            if face is not None:
+                resized_face = cv2.resize(face, (100, 100))
+                feature_vector = resized_face.flatten()
+                extracted_features.append(feature_vector)
+
+        cap.release()
+        os.remove(tfile.name)
+
+        if extracted_features:
+            features = np.mean(extracted_features, axis=0).reshape(1, -1)  # Aggregate features
+            prediction = model.predict(features)
+            st.write(f"Predicted Health Data: {prediction}")
+        else:
+            st.write("No face detected. Try again with better lighting and positioning.")
+
+elif option == "Chat Bot":
+    st.write("Welcome to the interactive health assistant!")
+    user_input = st.text_input("Ask me anything about your health:")
+    if user_input:
+        response = f"I'm here to help! You asked: {user_input}"  # Replace with AI-generated response
+        st.write(response)
