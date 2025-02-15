@@ -41,6 +41,237 @@ Train-Test Split (80-20%) → Provides sufficient data for both training and eva
 Summary (50 Words)
 This code extracts pulse rate from videos using forehead intensity variations. It applies OpenCV for feature extraction, detects peaks with scipy.signal.find_peaks, and trains a Random Forest Regressor for prediction. The trained model achieves 4.74 BPM MAE and is saved for real-time pulse rate estimation on new videos.
 
+Pulse Rate Extraction from Video
+This part of the script extracts pulse rate from video frames based on forehead intensity variations.
+
+1️⃣ Setup & Imports
+python
+Copy
+Edit
+import os
+import cv2
+import numpy as np
+import pandas as pd
+import mediapipe as mp
+import time
+from concurrent.futures import ThreadPoolExecutor
+from scipy.signal import find_peaks
+from tqdm import tqdm  # Progress bar
+os: Interact with the file system (e.g., checking file paths).
+cv2 (OpenCV): Handles video processing and frame extraction.
+numpy: Performs numerical computations (e.g., mean intensity calculations).
+pandas: Stores and manipulates extracted features in a structured format.
+mediapipe: Not used here but often helpful for facial landmark detection.
+time: Used to measure processing time.
+ThreadPoolExecutor: Enables parallel processing for faster video processing.
+scipy.signal.find_peaks: Identifies peaks in signal data (used to estimate heart rate).
+tqdm: Displays a progress bar while processing videos.
+2️⃣ Load Video Files from Google Drive
+python
+Copy
+Edit
+video_folder = "/content/sample_data/testvideo"
+
+if not os.path.exists(video_folder):
+    raise FileNotFoundError(f"Video folder not found: {video_folder}")
+
+video_files = [os.path.join(video_folder, f) for f in os.listdir(video_folder) if f.endswith('.mp4')]
+video_folder: Directory containing videos.
+os.path.exists(video_folder): Checks if the folder exists.
+os.listdir(video_folder): Lists all files in the folder.
+os.path.join(video_folder, f): Forms the full path for each video file.
+if f.endswith('.mp4'): Ensures only .mp4 videos are processed.
+3️⃣ Define Pulse Extraction Function
+python
+Copy
+Edit
+def extract_pulse(video_path):
+    start_time = time.time()  # ⏳ Start timing
+start_time = time.time(): Records the start time for performance measurement.
+⏩ Load Video & Process Frames
+python
+Copy
+Edit
+    cap = cv2.VideoCapture(video_path)
+    heart_rates = []
+    frame_skip = 5  # Process every 5th frame
+cv2.VideoCapture(video_path): Opens the video file.
+heart_rates = []: Stores extracted intensity values.
+frame_skip = 5: Skips every 5 frames to speed up processing.
+🔍 Process Video Frames
+python
+Copy
+Edit
+    if not cap.isOpened():
+        print(f"⚠️ Cannot open video file: {video_path}")
+        return None
+
+    frame_count = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+cap.isOpened(): Checks if the video is opened successfully.
+while cap.isOpened(): Loops through video frames.
+cap.read(): Reads the next frame.
+if not ret:: Exits loop when no more frames are available.
+📌 Extract Forehead Region & Compute Intensity
+python
+Copy
+Edit
+        if frame_count % frame_skip == 0:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            h, w = gray.shape
+            forehead = gray[int(0.2*h):int(0.3*h), int(0.3*w):int(0.7*w)]
+            heart_rates.append(np.mean(forehead))  # Store mean intensity
+
+        frame_count += 1
+cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY): Converts frame to grayscale.
+Extracts forehead region (20%–30% of height, 30%–70% of width).
+np.mean(forehead): Computes the average pixel intensity of the forehead.
+Stores intensity values in heart_rates.
+📌 Compute Pulse Rate
+python
+Copy
+Edit
+    cap.release()
+    
+    if len(heart_rates) == 0:
+        return None
+
+    peaks, _ = find_peaks(heart_rates, distance=30)
+    duration_seconds = len(heart_rates) / 30  # Assuming 30 FPS
+Releases video file (cap.release()).
+find_peaks(heart_rates, distance=30): Detects peaks in intensity signal.
+duration_seconds = len(heart_rates) / 30: Converts frame count to seconds (assuming 30 FPS).
+python
+Copy
+Edit
+    if duration_seconds == 0:
+        return None
+
+    pulse_rate = (len(peaks) / duration_seconds) * 60  # Convert to BPM
+(len(peaks) / duration_seconds) * 60: Computes heart rate in BPM.
+python
+Copy
+Edit
+    elapsed_time = time.time() - start_time  # ⏳ Time taken
+    return {"video_id": os.path.basename(video_path).lower().replace("copy of ", "").replace(".mp4", ""),
+            "pulse_rate": pulse_rate,
+            "processing_time_sec": round(elapsed_time, 2)}
+Returns results including video ID, pulse rate, and processing time.
+🔹 Parallel Processing for Efficiency
+python
+Copy
+Edit
+print("🚀 Extracting features from videos...")
+start_time = time.time()
+with ThreadPoolExecutor(max_workers=4) as executor:
+    results = list(tqdm(executor.map(extract_pulse, video_files), total=len(video_files)))
+ThreadPoolExecutor(max_workers=4): Runs video processing in parallel.
+tqdm: Displays a progress bar.
+📌 Save Processed Data
+python
+Copy
+Edit
+video_data = [res for res in results if res is not None]
+
+if not video_data:
+    raise ValueError("❌ No valid video data extracted. Check video files.")
+
+video_df = pd.DataFrame(video_data)
+video_features_path = "/content/drive/My Drive/video_features.csv"
+video_df.to_csv(video_features_path, index=False)
+print(f"✅ Video features saved to {video_features_path}")
+Converts extracted data into a Pandas DataFrame.
+Saves the CSV file to Google Drive.
+🔹 Train Random Forest for Pulse Rate Prediction
+python
+Copy
+Edit
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_absolute_error
+import joblib
+Imports machine learning libraries.
+python
+Copy
+Edit
+df = pd.read_csv(video_features_path)
+if df.empty:
+    raise ValueError("❌ No data found in video features file!")
+Loads the extracted video features.
+python
+Copy
+Edit
+features = ["processing_time_sec"]
+target = "pulse_rate"
+X = df[features]
+y = df[target]
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+Defines input features (processing_time_sec).
+Splits data into training (80%) and test (20%) sets.
+python
+Copy
+Edit
+model = RandomForestRegressor(n_estimators=50, random_state=42)
+model.fit(X_train, y_train)
+Trains a Random Forest Regressor.
+python
+Copy
+Edit
+predictions = model.predict(X_test)
+mae = mean_absolute_error(y_test, predictions)
+print(f"✅ MAE (Pulse Rate Prediction): {mae:.2f} BPM")
+Computes Mean Absolute Error (MAE) to evaluate model performance.
+python
+Copy
+Edit
+model_path = "/content/drive/My Drive/pulse_rate_model.pkl"
+joblib.dump(model, model_path)
+print(f"✅ Model saved at: {model_path}")
+Saves the trained model.
+🔹 Predict Pulse Rate from New Video
+python
+Copy
+Edit
+new_video = "/content/sample_data/testvideo/Copy of SL133.mp4"
+predicted_pulse = predict_pulse_rate(new_video)
+Uses the trained model to predict pulse rate from a new video.
+🚀 Summary
+Extracts forehead intensity changes from video frames.
+Detects peaks to estimate heart rate.
+Uses Random Forest to predict pulse rate from extracted features.
+Allows pulse rate estimation for new videos.
+This pipeline combines computer vision, signal processing, and machine learning to estimate pulse rate efficiently. 🚀
+
+
+
+
+
+
+
+You said:
+What is forehead intensity variation and explain how it is used to predict pulse rate. cite research papers from where information is extracted.
+ChatGPT said:
+Forehead intensity variation refers to the subtle fluctuations in light absorption and reflection on the forehead's skin surface, primarily due to the pulsatile flow of blood with each heartbeat. These variations can be captured using photoplethysmography (PPG), a non-invasive optical technique that detects blood volume changes in the microvascular bed of tissue.
+
+In the context of pulse rate estimation, analyzing the intensity variations on the forehead allows for the detection of the cardiac pulse signal. As blood pulses through the vessels, it causes periodic changes in skin color and translucency, leading to measurable intensity fluctuations. By monitoring these fluctuations, it's possible to determine the heart rate.
+
+Several studies have explored the efficacy of using forehead PPG signals for vital sign monitoring:
+
+Hernando et al. (2017) compared PPG signals from the finger and forehead for respiratory rate estimation. They found that while both sites are viable, the finger provided more accurate estimations for respiratory rates below 0.4 Hz. However, the forehead remains a convenient site for PPG measurement, especially in scenarios where finger monitoring is impractical. 
+DIEC.UNIZAR.ES
+
+Braun et al. (2024) investigated the training of remote PPG models using videos and targets from different body sites. They found that models trained with forehead PPG signals produced more accurate waveform predictions compared to those trained with fingertip PPG signals. This suggests that the forehead is a viable site for PPG-based heart rate estimation. 
+ARXIV.ORG
+
+In summary, forehead intensity variation, as detected through PPG, serves as a valuable indicator for pulse rate estimation. While the forehead may not always provide the same level of accuracy as other sites like the finger, it offers a practical alternative for continuous and non-invasive heart rate monitoring.
+
+
+Sources
+
+
 
 
 
